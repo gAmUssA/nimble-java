@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Loyalty Agent — Nimble + LangChain4j + Claude</title>
+<style>
+  :root {
+    --bg: #0c1116;
+    --panel: #141c25;
+    --border: #1f2a36;
+    --text: #e6edf3;
+    --muted: #7d8590;
+    --accent: #ffb000;
+    --tool: #58a6ff;
+    --answer: #3fb950;
+    --error: #f85149;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+    line-height: 1.5;
+  }
+  header {
+    padding: 18px 24px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+  }
+  header h1 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+  }
+  header .sub {
+    color: var(--muted);
+    font-size: 13px;
+  }
+  main {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 28px 24px 80px;
+  }
+  .canned {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+  .canned button {
+    text-align: left;
+    background: var(--panel);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    padding: 12px 14px;
+    border-radius: 4px;
+    font-family: inherit;
+    font-size: 14px;
+    cursor: pointer;
+    transition: background 120ms;
+  }
+  .canned button:hover { background: #1c2632; }
+  .canned button .label {
+    color: var(--accent);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    margin-right: 8px;
+  }
+  form {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 28px;
+  }
+  input[type=text] {
+    flex: 1;
+    background: var(--panel);
+    color: var(--text);
+    border: 1px solid var(--border);
+    padding: 12px 14px;
+    border-radius: 4px;
+    font-family: inherit;
+    font-size: 14px;
+  }
+  input[type=text]:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  button.go {
+    background: var(--accent);
+    color: #000;
+    border: 0;
+    padding: 12px 20px;
+    border-radius: 4px;
+    font-weight: 700;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  button.go:disabled { opacity: 0.5; cursor: wait; }
+  #stream {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    min-height: 240px;
+    padding: 16px 18px;
+    font-family: var(--mono);
+    font-size: 13px;
+    white-space: pre-wrap;
+    overflow-x: auto;
+  }
+  #stream .event { margin: 0 0 6px; }
+  #stream .event.query { color: var(--accent); font-weight: 700; }
+  #stream .event.tool { color: var(--tool); }
+  #stream .event.answer { color: var(--answer); margin-top: 12px; }
+  #stream .event.error { color: var(--error); }
+  #stream .event.done { color: var(--muted); margin-top: 12px; font-style: italic; }
+  .placeholder { color: var(--muted); font-style: italic; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Loyalty Agent</h1>
+  <span class="sub">Quarkus · LangChain4j · Nimble · Claude Sonnet 4.5</span>
+</header>
+<main>
+  <div class="canned">
+    <button id="btn-q1" onclick="run(this.dataset.q)" data-q="What's the current MileagePlus earning rate on United Polaris business?">
+      <span class="label">Q1</span>What's the current MileagePlus earning rate on United Polaris business?
+    </button>
+    <button id="btn-q2" onclick="run(this.dataset.q)" data-q="I have 120,000 MileagePlus miles. Should I transfer to Avianca LifeMiles or fly United directly to Tokyo in March?">
+      <span class="label">Q2</span>I have 120,000 MileagePlus miles. Should I transfer to Avianca LifeMiles or fly United directly to Tokyo in March?
+    </button>
+    <button id="btn-q3" onclick="run(this.dataset.q)" data-q="Find a recent United MileagePlus devaluation post on One Mile at a Time and show me the diff between the new and prior award chart as a markdown table.">
+      <span class="label">Q3</span>Find a recent OMAAT devaluation post and show the diff as a markdown table.
+    </button>
+  </div>
+
+  <form onsubmit="event.preventDefault(); run(document.getElementById('q').value);">
+    <input type="text" id="q" placeholder="Or ask your own loyalty question…" autocomplete="off"/>
+    <button class="go" id="go">Ask</button>
+  </form>
+
+  <div id="stream"><span class="placeholder">Pick a query above or type your own. Tool calls and the final answer will stream here.</span></div>
+</main>
+<script>
+  function run(q) {
+    if (!q) return;
+    const stream = document.getElementById('stream');
+    const goBtn = document.getElementById('go');
+    stream.innerHTML = '';
+    goBtn.disabled = true;
+    document.getElementById('q').value = q;
+
+    const url = '/agent/stream?q=' + encodeURIComponent(q);
+    fetch(url).then(async (resp) => {
+      if (!resp.ok) {
+        appendEvent('error', 'HTTP ' + resp.status);
+        goBtn.disabled = false;
+        return;
+      }
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        let nl;
+        while ((nl = buf.indexOf('\n')) >= 0) {
+          const line = buf.slice(0, nl).trim();
+          buf = buf.slice(nl + 1);
+          if (line) appendLine(line);
+        }
+      }
+      if (buf.trim()) appendLine(buf.trim());
+      goBtn.disabled = false;
+    }).catch((e) => {
+      appendEvent('error', String(e));
+      goBtn.disabled = false;
+    });
+  }
+
+  function appendLine(line) {
+    const m = line.match(/^\[(query|tool|answer|done|error)\]\s*([\s\S]*)$/);
+    if (m) appendEvent(m[1], m[2]);
+    else appendEvent('tool', line);
+  }
+
+  function appendEvent(type, text) {
+    const div = document.createElement('div');
+    div.className = 'event ' + type;
+    div.textContent = '[' + type + '] ' + text;
+    document.getElementById('stream').appendChild(div);
+    div.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }
+</script>
+</body>
+</html>
