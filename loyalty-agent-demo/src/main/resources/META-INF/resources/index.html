@@ -62,6 +62,29 @@
   header .toggle:hover { color: var(--text); border-color: var(--muted); }
   header .toggle.on { color: var(--tool); border-color: var(--tool); }
 
+  /* MODE SEGMENTED CONTROL */
+  .mode {
+    display: inline-flex;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+    margin-right: 8px;
+  }
+  .mode button {
+    background: transparent;
+    color: var(--muted);
+    border: 0;
+    padding: 6px 12px;
+    font-family: var(--mono);
+    font-size: 12px;
+    cursor: pointer;
+    transition: background 100ms, color 100ms;
+  }
+  .mode button + button { border-left: 1px solid var(--border); }
+  .mode button:hover { color: var(--text); }
+  .mode button.on    { background: var(--accent); color: #000; font-weight: 700; }
+  .mode button.on.raw { background: var(--error); color: #fff; }
+
   /* MAIN */
   main {
     max-width: 960px;
@@ -247,6 +270,10 @@
 <header>
   <h1>Loyalty Agent</h1>
   <span class="sub">Quarkus · LangChain4j · Nimble · Claude Sonnet 4.5</span>
+  <span class="mode" role="tablist">
+    <button id="mode-agent" class="on"   onclick="setMode('agent')">Agent</button>
+    <button id="mode-raw"                onclick="setMode('raw')">Raw model</button>
+  </span>
   <button id="toggle-trace" class="toggle" onclick="toggleTrace()">▶ Show trace</button>
 </header>
 <main>
@@ -277,6 +304,22 @@
 </main>
 
 <script>
+  /* ---------- mode ---------- */
+  let mode = 'agent';
+  function setMode(m) {
+    mode = m;
+    document.getElementById('mode-agent').classList.toggle('on',  m === 'agent');
+    document.getElementById('mode-raw').classList.toggle('on',    m === 'raw');
+    document.getElementById('mode-raw').classList.toggle('raw',   m === 'raw');
+    // re-prime placeholder to match current mode
+    if (document.getElementById('answer').classList.contains('empty')
+        || /Ask a question|model gives/.test(document.getElementById('ticker-text').textContent)) {
+      setTicker(m === 'raw'
+        ? 'Raw model — no tools, no live web. Try a fact the model may have wrong.'
+        : 'Ask a question.', null);
+    }
+  }
+
   /* ---------- toggle ---------- */
   let traceOpen = false;
   function toggleTrace() {
@@ -297,9 +340,11 @@
 
     document.getElementById('q').value = q;
     resetState();
-    setTicker('Thinking…', 'active');
+    setTicker(mode === 'raw'
+      ? 'Raw model thinking… (no tools, no web)'
+      : 'Thinking…', 'active');
 
-    const url = '/agent/stream?q=' + encodeURIComponent(q);
+    const url = '/agent/stream?q=' + encodeURIComponent(q) + '&mode=' + encodeURIComponent(mode);
     let answerBuf = '';
 
     fetch(url).then(async (resp) => {
@@ -344,13 +389,17 @@
   /* ---------- event mapping ---------- */
   function handleLine(line, answerBuf) {
     // line is "data:[query] ..." or "data:[tool] → ..." etc.
-    const m = line.match(/^data:\[(query|tool|answer|done|error)\]\s?([\s\S]*)$/);
+    const m = line.match(/^data:\[(query|mode|tool|answer|done|error)\]\s?([\s\S]*)$/);
     if (!m) return answerBuf;
     const [, kind, body] = m;
 
     if (kind === 'query') {
-      setTicker('Thinking…', 'active');
+      setTicker(mode === 'raw'
+        ? 'Raw model thinking… (no tools, no web)'
+        : 'Thinking…', 'active');
       addTrace('query', '▸ ' + body);
+    } else if (kind === 'mode') {
+      addTrace('tool-out', '⚠ ' + body);
     } else if (kind === 'tool') {
       // body starts with "→ " (out) or "← " (in)
       if (body.startsWith('→')) {

@@ -4,6 +4,8 @@ import org.jboss.resteasy.reactive.RestStreamElementType;
 
 import java.util.concurrent.CompletableFuture;
 
+import dev.langchain4j.data.message.UserMessage;
+import dev.langchain4j.model.chat.ChatLanguageModel;
 import io.smallrye.mutiny.Multi;
 import io.smallrye.mutiny.infrastructure.Infrastructure;
 import jakarta.inject.Inject;
@@ -19,22 +21,30 @@ public class AgentResource {
   LoyaltyAgent agent;
 
   @Inject
+  ChatLanguageModel rawModel;
+
+  @Inject
   AgentEventBus eventBus;
 
   @GET
   @Path("/stream")
   @RestStreamElementType(MediaType.TEXT_PLAIN)
-  public Multi<String> stream(@QueryParam("q") String question) {
+  public Multi<String> stream(@QueryParam("q") String question,
+                              @QueryParam("mode") String mode) {
     if (question == null || question.isBlank()) {
       return Multi.createFrom().items("[error] missing 'q' query parameter");
     }
+    boolean raw = "raw".equalsIgnoreCase(mode);
     eventBus.reset();
     return Multi.createFrom().<String>emitter(emitter -> {
       emitter.emit("[query] " + question);
+      if (raw) emitter.emit("[mode] raw — no tools, no web search");
       long start = System.currentTimeMillis();
 
       CompletableFuture<String> future = CompletableFuture.supplyAsync(
-          () -> agent.ask(question),
+          () -> raw
+              ? rawModel.generate(UserMessage.from(question)).content().text()
+              : agent.ask(question),
           Infrastructure.getDefaultWorkerPool()
       );
 
