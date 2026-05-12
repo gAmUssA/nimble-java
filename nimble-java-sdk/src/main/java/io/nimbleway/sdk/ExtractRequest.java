@@ -1,22 +1,28 @@
 package io.nimbleway.sdk;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.util.List;
+import java.util.Map;
 
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record ExtractRequest(
     String url,
     Boolean render,
     Boolean parse,
-    Object parser,
+    Map<String, Object> parser,
     List<Format> formats,
     String country,
     String locale
 ) {
 
   public enum Format {
-    html, markdown, screenshot, headers, links
+    @JsonProperty("html")       HTML,
+    @JsonProperty("markdown")   MARKDOWN,
+    @JsonProperty("screenshot") SCREENSHOT,
+    @JsonProperty("headers")    HEADERS,
+    @JsonProperty("links")      LINKS
   }
 
   public static ExtractRequest of(String url) {
@@ -32,7 +38,7 @@ public record ExtractRequest(
     private String url;
     private Boolean render;
     private Boolean parse;
-    private Object parser;
+    private Map<String, Object> parser;
     private List<Format> formats;
     private String country;
     private String locale;
@@ -52,7 +58,7 @@ public record ExtractRequest(
       return this;
     }
 
-    public Builder parser(Object v) {
+    public Builder parser(Map<String, Object> v) {
       this.parser = v;
       return this;
     }
@@ -78,6 +84,9 @@ public record ExtractRequest(
     }
 
     public ExtractRequest build() {
+      if (url == null || url.isBlank()) {
+        throw new IllegalStateException("url is required");
+      }
       return new ExtractRequest(url, render, parse, parser, formats, country, locale);
     }
   }

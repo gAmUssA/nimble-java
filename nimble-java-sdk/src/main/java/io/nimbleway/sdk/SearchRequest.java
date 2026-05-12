@@ -3,6 +3,7 @@ package io.nimbleway.sdk;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+import java.time.LocalDate;
 import java.util.List;
 
 @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -15,22 +16,35 @@ public record SearchRequest(
     @JsonProperty("include_answer") Boolean includeAnswer,
     @JsonProperty("include_domains") List<String> includeDomains,
     @JsonProperty("exclude_domains") List<String> excludeDomains,
-    @JsonProperty("start_date") String startDate,
-    @JsonProperty("end_date") String endDate,
+    @JsonProperty("start_date") LocalDate startDate,
+    @JsonProperty("end_date") LocalDate endDate,
     String country,
     String locale
 ) {
 
   public enum Focus {
-    general, news, location, coding, geo, shopping, social, academic
+    @JsonProperty("general")  GENERAL,
+    @JsonProperty("news")     NEWS,
+    @JsonProperty("location") LOCATION,
+    @JsonProperty("coding")   CODING,
+    @JsonProperty("geo")      GEO,
+    @JsonProperty("shopping") SHOPPING,
+    @JsonProperty("social")   SOCIAL,
+    @JsonProperty("academic") ACADEMIC
   }
 
   public enum Depth {
-    lite, fast, deep
+    @JsonProperty("lite") LITE,
+    @JsonProperty("fast") FAST,
+    @JsonProperty("deep") DEEP
   }
 
   public enum TimeRange {
-    hour, day, week, month, year
+    @JsonProperty("hour")  HOUR,
+    @JsonProperty("day")   DAY,
+    @JsonProperty("week")  WEEK,
+    @JsonProperty("month") MONTH,
+    @JsonProperty("year")  YEAR
   }
 
   public static SearchRequest of(String query) {
@@ -51,8 +65,8 @@ public record SearchRequest(
     private Boolean includeAnswer;
     private List<String> includeDomains;
     private List<String> excludeDomains;
-    private String startDate;
-    private String endDate;
+    private LocalDate startDate;
+    private LocalDate endDate;
     private String country;
     private String locale;
 
@@ -96,12 +110,12 @@ public record SearchRequest(
       return this;
     }
 
-    public Builder startDate(String v) {
+    public Builder startDate(LocalDate v) {
       this.startDate = v;
       return this;
     }
 
-    public Builder endDate(String v) {
+    public Builder endDate(LocalDate v) {
       this.endDate = v;
       return this;
     }
@@ -117,6 +131,9 @@ public record SearchRequest(
     }
 
     public SearchRequest build() {
+      if (query == null || query.isBlank()) {
+        throw new IllegalStateException("query is required");
+      }
       return new SearchRequest(query, maxResults, focus, searchDepth, timeRange,
                                includeAnswer, includeDomains, excludeDomains, startDate, endDate, country, locale);
     }

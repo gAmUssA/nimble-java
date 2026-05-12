@@ -41,8 +41,8 @@ public class NimbleTools {
     SearchRequest req = SearchRequest.builder()
         .query(query)
         .maxResults(5)
-        .focus(SearchRequest.Focus.general)
-        .searchDepth(SearchRequest.Depth.lite)
+        .focus(SearchRequest.Focus.GENERAL)
+        .searchDepth(SearchRequest.Depth.LITE)
         .timeRange(tr)
         .build();
 
@@ -92,7 +92,7 @@ public class NimbleTools {
     ExtractRequest req = ExtractRequest.builder()
         .url(url)
         .render(true)
-        .formats(ExtractRequest.Format.markdown)
+        .formats(ExtractRequest.Format.MARKDOWN)
         .build();
 
     var res = nimble.extract(req);
@@ -119,7 +119,7 @@ public class NimbleTools {
           return null;
       }
     try {
-      return SearchRequest.TimeRange.valueOf(s.toLowerCase());
+      return SearchRequest.TimeRange.valueOf(s.toUpperCase());
     } catch (IllegalArgumentException e) {
       return null;
     }

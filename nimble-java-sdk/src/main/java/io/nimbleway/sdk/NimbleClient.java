@@ -3,6 +3,7 @@ package io.nimbleway.sdk;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 
+import java.io.Closeable;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -10,8 +11,9 @@ import java.net.http.HttpRequest.BodyPublishers;
 import java.net.http.HttpResponse;
 import java.net.http.HttpResponse.BodyHandlers;
 import java.time.Duration;
+import java.util.concurrent.CompletableFuture;
 
-public final class NimbleClient {
+public final class NimbleClient implements Closeable {
 
   private static final String DEFAULT_BASE_URL = "https://sdk.nimbleway.com/v1";
 
@@ -35,31 +37,67 @@ public final class NimbleClient {
     return post("/search", req, SearchResponse.class);
   }
 
+  public CompletableFuture<SearchResponse> searchAsync(SearchRequest req) {
+    return postAsync("/search", req, SearchResponse.class);
+  }
+
   public ExtractResponse extract(ExtractRequest req) {
     return post("/extract", req, ExtractResponse.class);
+  }
+
+  public CompletableFuture<ExtractResponse> extractAsync(ExtractRequest req) {
+    return postAsync("/extract", req, ExtractResponse.class);
+  }
+
+  private HttpRequest buildHttpRequest(String path, String payload) {
+    return HttpRequest.newBuilder()
+        .uri(URI.create(baseUrl + path))
+        .timeout(requestTimeout)
+        .header("Authorization", "Bearer " + apiKey)
+        .header("Content-Type", "application/json")
+        .header("Accept", "application/json")
+        .POST(BodyPublishers.ofString(payload))
+        .build();
+  }
+
+  private <T> CompletableFuture<T> postAsync(String path, Object body, Class<T> responseType) {
+    try {
+      String payload = json.writeValueAsString(body);
+      HttpRequest request = buildHttpRequest(path, payload);
+      return http.sendAsync(request, BodyHandlers.ofString())
+          .thenApply(response -> deserialize(response, path, responseType));
+    } catch (Exception e) {
+      return CompletableFuture.failedFuture(new NimbleException("Nimble API call failed: " + path, e));
+    }
+  }
+
+  private <T> T deserialize(HttpResponse<String> response, String path, Class<T> responseType) {
+    int code = response.statusCode();
+    if (code >= 200 && code < 300) {
+      try {
+        return json.readValue(response.body(), responseType);
+      } catch (Exception e) {
+        throw new NimbleException("Failed to parse response from " + path, e);
+      }
+    }
+    String errBody = response.body();
+    String snippet = errBody == null ? "(empty)"
+                                     : (errBody.length() > 500 ? errBody.substring(0, 500) + "\u2026" : errBody);
+    throw new NimbleException(code, errBody,
+                              "Nimble API error %d on POST %s — body: %s".formatted(code, path, snippet));
+  }
+
+  @Override
+  public void close() {
+    http.close();
   }
 
   private <T> T post(String path, Object body, Class<T> responseType) {
     try {
       String payload = json.writeValueAsString(body);
-      HttpRequest request = HttpRequest.newBuilder()
-          .uri(URI.create(baseUrl + path))
-          .timeout(requestTimeout)
-          .header("Authorization", "Bearer " + apiKey)
-          .header("Content-Type", "application/json")
-          .header("Accept", "application/json")
-          .POST(BodyPublishers.ofString(payload))
-          .build();
+      HttpRequest request = buildHttpRequest(path, payload);
       HttpResponse<String> response = http.send(request, BodyHandlers.ofString());
-      int code = response.statusCode();
-      if (code >= 200 && code < 300) {
-        return json.readValue(response.body(), responseType);
-      }
-      String errBody = response.body();
-      String snippet = errBody == null ? "(empty)"
-                                       : (errBody.length() > 500 ? errBody.substring(0, 500) + "…" : errBody);
-      throw new NimbleException(code, errBody,
-                                "Nimble API error %d on POST %s — body: %s".formatted(code, path, snippet));
+      return deserialize(response, path, responseType);
     } catch (NimbleException e) {
       throw e;
     } catch (Exception e) {
